@@ -1,8 +1,10 @@
 import AWS  from "aws-sdk";
 
 export const handler = async (event) => {
-    if(event.eventType !== 'complete' && event.eventType !== 'schedule') {
-        console.error(`eventType is invalid. eventType: ${event.eventType}`);
+    console.log(JSON.stringify(event));
+    const eventType = event.Details.Parameters.eventType;
+    if(eventType !== 'complete' && eventType !== 'schedule') {
+        console.error(`eventType is invalid. eventType: ${eventType}`);
         return {
             statusCode: 400
         }
@@ -15,7 +17,7 @@ export const handler = async (event) => {
     const nowISO8601 = nowTokyo.toISOString();
     const dataKey = nowISO8601.slice(0, 10);
 
-    if(event.eventType === 'complete') {
+    if(eventType === 'complete') {
         // DBのステータスをcompletedに更新する
         // 初回実行の場合はデータが存在しない状態で実行されるため、
         // その場合はデータを作成する
@@ -55,7 +57,7 @@ export const handler = async (event) => {
         return {
             statusCode: 200
         }
-    } else if(event.eventType === 'schedule') {
+    } else if(eventType === 'schedule') {
         // DynamoDBからデータを取得し、その日の実行回数上限以下であれば
         // 10分後に起動するEventBridgeSchedulerのスケジュールを作成する
 
@@ -68,7 +70,7 @@ export const handler = async (event) => {
         const response = await dynamoDB.get(params).promise();
 
         let count = response.Item && response.Item.count ? response.Item.count + 1 : 1;
-        if (count <= process.env.MAX_COUNT && response.Item.status !== 'completed') {
+        if (count <= process.env.MAX_COUNT && (!response.Item || response.Item.status !== 'completed')) {
             // 10分後に起動するEventBridgeSchedulerのスケジュールを作成する
             const eventBridgeScheduler = new AWS.Scheduler();
             const createSchedulerParams = {
@@ -105,7 +107,7 @@ export const handler = async (event) => {
                 TableName: process.env.TABLE_NAME,
                 Item: {
                     date: dataKey,
-                    count: count + 1,
+                    count: count,
                 },
             };
             await dynamoDB.put(putParams).promise();
